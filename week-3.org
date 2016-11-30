@@ -1,0 +1,86 @@
+** Goals
+- Fix for https://github.com/Microsoft/visualfsharp/issues/1611
+#+BEGIN_SRC sml
+  type X<'T> = Y of 'T
+  type X<'T> when 'T :> string with
+    static member X = 2
+    static member take (s: 'T) = s
+    ;;
+#+END_SRC
+
+evaluates to
+
+#+BEGIN_SRC sml
+type X<'T> =
+  | Y of 'T |
+  with
+    static member X : int
+    static member take : s:'T -> 'T
+  end
+#+END_SRC
+
+but should fail
+
+** Approach
+- FS lexer only handles indentation errors and such
+- Looks like this should be fixed in the parser.
+- Might be able to detect the error during AST generation.
+- =fsi.fs:1810 =ExecInteraction= and =ParsedFsiInteraction= are where the issue likely is hidden.
+
+** Accomplished
+This week was primarily practical excercises and getting familiar with the codebase:
+
+- Read through F# Spec ch. 5, 8, 14 on type checking and name resolution.
+- Understand basic compiler structure.
+- Opened a new bug report for linux builds of =fsi= https://github.com/Microsoft/visualfsharp/issues/1869.
+- Familiarity with the debugging facilities of VS project (internal variables, development interpreter flags).
+- Learned the difference between the compilation path for FSI and FSC.
+
+** TODO Items for next week
+- Best way to explore AST and other large data structures in VS?
+- Debugging F# in the VS debugger with C# syntax.
+  - The debugger does not recognize F# expressions. Use prim-types.fs:1723 (Option<'T>) methods like action.Value
+- Learn more about H-M type system.
+- Learn moare about type variable generation and constraint solving.
+- What are some good resources for understanding constarint solving problems?
+- What is going on in =lex.fs:173 trans= (translation table where rows are states)?
+
+** Learned
+*** Visual Sudio
+- CodeMap feature during debugging sessions
+
+*** fsi.fs
+- lib.fs =progress= flag is quite helpful in debugging the interpreter.
+- =FsiInteractionProcessor=
+- =FsiDynamicCompiler.EvalParsedDefinitions=
+- 940: =FsiDynamicCompiler.ProcessInputs= ignores many flags from tcConfigBuilder b.c. it doesn't use ParseOneInputLexbuf from CompileOps -- instead, this call path into lexer & parser is completely different.
+  - 949: The *printAst* flag =--ast= is available and helpful.
+- 1810: =ExecInteraction=
+  - 1818: =IDefns= from =ParsedFsiInteraction= are *where the issue likely is hidden*.
+- 2126: EvalInteraction - differens from FSC, which uses =Parser.interaction= (=Microsoft.FSharp.Core.Operators.unbox ((tables ()).Interpret(lexer, lexbuf, 4))=)
+  - =ParseAndExecOneSetOfInteractionsFromLexbuf=
+    - =ParseInteraction= : ... -> =Ast.ParsedFsiInteraction=
+    - =mainThreadProcessParsedInteractions= executes the compiled code for the toplevel
+*** CompileOps.fs
+- 2105: =CreateNew= contains configuration options such as =--tokenize --ast --parseonly --terms= by reading a =TcConfigBuilder=.
+  - These flags act differently for FSI and FSC, as the evaluation code paths are different.
+  - FSI has fewer uses of these debugging flags.
+- 3315: =ParseOneInputLexbuf= parses lexemes from =tokenizer = LexFilter.LexFilter=
+
+*** lib.fs
+- 14: =debug=, =verbose= flags
+- 44: =CtxtWhen= for the 'when' keyword changes some parenthetical semantics
+  - See ll. 2051 for an example usage
+- 2084: Dealing with =type= keyword lexemes
+
+*** Constraint checker
+- F# spec section 14 helps to explain the type checking algorithm
+#+BEGIN_SRC sml
+TcTyparConstraints cenv newOk checkCxs occ env tpenv wcs =
+    // Mark up default constraints with a priority in reverse order: last gets 0, second
+    // last gets 1 etc. See comment on TyparConstraint.DefaultsTo...
+#+END_SRC
+
+*** lexfilter.fs
+  - 21: =debug= flag
+  - =printfn= calls are scattered about.
